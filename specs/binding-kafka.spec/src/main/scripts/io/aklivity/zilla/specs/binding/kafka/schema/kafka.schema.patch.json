@@ -94,6 +94,7 @@
                                                         "integer",
                                                         "avro",
                                                         "long",
+                                                        "short",
                                                         "string"
                                                     ]
                                                 },
@@ -195,6 +196,7 @@
                                                         "integer",
                                                         "avro",
                                                         "long",
+                                                        "short",
                                                         "string"
                                                     ]
                                                 },
