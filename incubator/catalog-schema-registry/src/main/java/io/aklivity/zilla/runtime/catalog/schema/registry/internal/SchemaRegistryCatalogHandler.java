@@ -46,7 +46,7 @@ public class SchemaRegistryCatalogHandler implements CatalogHandler
     private final RegisterSchemaRequest request;
     private final CRC32C crc32c;
     private final Int2ObjectCache<CachedSchema> schemas;
-    private final Int2ObjectCache<CachedSchemaId> schemaIdCache;
+    private final Int2ObjectCache<CachedSchemaId> schemaIds;
     private final long cacheTtl;
 
     public SchemaRegistryCatalogHandler(
@@ -57,7 +57,7 @@ public class SchemaRegistryCatalogHandler implements CatalogHandler
         this.request = new RegisterSchemaRequest();
         this.crc32c = new CRC32C();
         this.schemas = new Int2ObjectCache<>(1, 1024, i -> {});
-        this.schemaIdCache = new Int2ObjectCache<>(1, 1024, i -> {});
+        this.schemaIds = new Int2ObjectCache<>(1, 1024, i -> {});
         this.cacheTtl = config.cacheTtl;
         this.prefixRO = new UnsafeBuffer(new byte[5]);
     }
@@ -120,10 +120,10 @@ public class SchemaRegistryCatalogHandler implements CatalogHandler
         int schemaId;
 
         int checkSum = generateCRC32C(subject, version);
-        if (schemaIdCache.containsKey(checkSum) &&
-            (System.currentTimeMillis() - schemaIdCache.get(checkSum).timestamp) < cacheTtl * 1000)
+        if (schemaIds.containsKey(checkSum) &&
+            (System.currentTimeMillis() - schemaIds.get(checkSum).timestamp) < cacheTtl * 1000)
         {
-            schemaId = schemaIdCache.get(checkSum).id;
+            schemaId = schemaIds.get(checkSum).id;
         }
         else
         {
@@ -131,7 +131,7 @@ public class SchemaRegistryCatalogHandler implements CatalogHandler
             schemaId = response != null ? request.resolveResponse(response) : NO_SCHEMA_ID;
             if (schemaId != NO_SCHEMA_ID)
             {
-                schemaIdCache.put(checkSum, new CachedSchemaId(System.currentTimeMillis(), schemaId));
+                schemaIds.put(checkSum, new CachedSchemaId(System.currentTimeMillis(), schemaId));
             }
         }
         return schemaId;
