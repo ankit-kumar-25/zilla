@@ -22,7 +22,11 @@ import java.util.function.LongFunction;
 
 import org.agrona.BitUtil;
 import org.agrona.DirectBuffer;
+import org.apache.avro.AvroRuntimeException;
 import org.apache.avro.Schema;
+import org.apache.avro.generic.GenericDatumReader;
+import org.apache.avro.generic.GenericDatumWriter;
+import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.io.JsonEncoder;
 
 import io.aklivity.zilla.runtime.engine.catalog.CatalogHandler;
@@ -63,7 +67,7 @@ public class AvroReadValidator extends AvroValidator implements ValueValidator, 
             {
                 schemaId = handler.resolve(subject, catalog.version);
             }
-            padding = paddings.computeIfAbsent(schemaId, this::supplyPadding);
+            padding = supplyPadding(schemaId);
         }
         return padding;
     }
@@ -116,7 +120,7 @@ public class AvroReadValidator extends AvroValidator implements ValueValidator, 
             schemaId = handler.resolve(subject, catalog.version);
         }
 
-        reader = readers.computeIfAbsent(schemaId, this::supplyReader);
+        GenericDatumReader<GenericRecord> reader = supplyReader(schemaId);
         if (reader != null)
         {
             int payloadLength = length - progress;
@@ -124,9 +128,13 @@ public class AvroReadValidator extends AvroValidator implements ValueValidator, 
             if (FORMAT_JSON.equals(format))
             {
                 byte[] record = deserializeRecord(schemaId, data, payloadIndex, payloadLength);
-                valueRO.wrap(record);
-                valLength = record.length;
-                next.accept(valueRO, 0, valLength);
+                int recordLength = record.length;
+                if (recordLength > 0)
+                {
+                    valLength = recordLength;
+                    valueRO.wrap(record);
+                    next.accept(valueRO, 0, valLength);
+                }
             }
             else if (validate(schemaId, data, payloadIndex, payloadLength))
             {
@@ -146,17 +154,18 @@ public class AvroReadValidator extends AvroValidator implements ValueValidator, 
         encoded.reset();
         try
         {
-            record = records.computeIfAbsent(schemaId, this::supplyRecord);
+            GenericDatumReader<GenericRecord> reader = supplyReader(schemaId);
+            GenericDatumWriter<GenericRecord> writer = supplyWriter(schemaId);
+            GenericRecord record = supplyRecord(schemaId);
             in.wrap(buffer, index, length);
             record = reader.read(record, decoderFactory.binaryDecoder(in, decoder));
             Schema schema = record.getSchema();
             JsonEncoder out = encoderFactory.jsonEncoder(schema, encoded);
-            writer = writers.computeIfAbsent(schemaId, this::supplyWriter);
             writer.write(record, out);
             out.flush();
             encoded.close();
         }
-        catch (IOException ex)
+        catch (IOException | AvroRuntimeException ex)
         {
             ex.printStackTrace();
         }

@@ -15,13 +15,14 @@
 package io.aklivity.zilla.runtime.validator.avro;
 
 import java.io.IOException;
-import java.nio.ByteOrder;
 import java.util.function.LongFunction;
 
 import org.agrona.DirectBuffer;
-import org.agrona.MutableDirectBuffer;
-import org.agrona.concurrent.UnsafeBuffer;
+import org.apache.avro.AvroRuntimeException;
 import org.apache.avro.Schema;
+import org.apache.avro.generic.GenericDatumReader;
+import org.apache.avro.generic.GenericDatumWriter;
+import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.io.BinaryEncoder;
 
 import io.aklivity.zilla.runtime.engine.catalog.CatalogHandler;
@@ -33,10 +34,6 @@ import io.aklivity.zilla.runtime.validator.avro.config.AvroValidatorConfig;
 
 public class AvroWriteValidator extends AvroValidator implements ValueValidator, FragmentValidator
 {
-    private static final int SCHEMA_REGISTRY_PADDING_LEN = 5;
-
-    private final MutableDirectBuffer prefixRO = new UnsafeBuffer(new byte[5]);
-
     public AvroWriteValidator(
         AvroValidatorConfig config,
         LongFunction<CatalogHandler> supplyCatalog)
@@ -50,12 +47,7 @@ public class AvroWriteValidator extends AvroValidator implements ValueValidator,
         int index,
         int length)
     {
-        int padding = 0;
-        if (appendSchemaId)
-        {
-            padding = SCHEMA_REGISTRY_PADDING_LEN; // TODO: fetch this from catalog
-        }
-        return padding;
+        return handler.maxPadding();
     }
 
     @Override
@@ -92,7 +84,8 @@ public class AvroWriteValidator extends AvroValidator implements ValueValidator,
         int schemaId = catalog != null && catalog.id > 0
                 ? catalog.id
                 : handler.resolve(subject, catalog.version);
-        reader = readers.computeIfAbsent(schemaId, this::supplyReader);
+
+        GenericDatumReader<GenericRecord> reader = supplyReader(schemaId);
 
         if (reader != null)
         {
@@ -101,27 +94,16 @@ public class AvroWriteValidator extends AvroValidator implements ValueValidator,
                 byte[] record = serializeJsonRecord(schemaId, data, index, length);
 
                 int recordLength = record.length;
-                valLength = record.length;
-                if (appendSchemaId)
+                if (recordLength > 0)
                 {
-                    valLength += 5;
-                    prefixRO.putByte(0, MAGIC_BYTE);
-                    prefixRO.putInt(1, schemaId, ByteOrder.BIG_ENDIAN);
-                    next.accept(prefixRO, 0, 5);
+                    valLength = recordLength + handler.enrich(schemaId, next);
+                    valueRO.wrap(record);
+                    next.accept(valueRO, 0, recordLength);
                 }
-                valueRO.wrap(record);
-                next.accept(valueRO, 0, recordLength);
             }
             else if (validate(schemaId, data, index, length))
             {
-                valLength = length;
-                if (appendSchemaId)
-                {
-                    valLength += 5;
-                    prefixRO.putByte(0, MAGIC_BYTE);
-                    prefixRO.putInt(1, schemaId, ByteOrder.BIG_ENDIAN);
-                    next.accept(prefixRO, 0, 5);
-                }
+                valLength = length + handler.enrich(schemaId, next);
                 next.accept(data, index, length);
             }
         }
@@ -137,17 +119,18 @@ public class AvroWriteValidator extends AvroValidator implements ValueValidator,
         encoded.reset();
         try
         {
-            Schema schema = schemas.get(schemaId);
-            record = records.computeIfAbsent(schemaId, this::supplyRecord);
+            Schema schema = supplySchema(schemaId);
+            GenericDatumReader<GenericRecord> reader = supplyReader(schemaId);
+            GenericDatumWriter<GenericRecord> writer = supplyWriter(schemaId);
+            GenericRecord record = supplyRecord(schemaId);
             in.wrap(buffer, index, length);
             record = reader.read(record, decoderFactory.jsonDecoder(schema, in));
-            writer = writers.computeIfAbsent(schemaId, this::supplyWriter);
             BinaryEncoder out = encoderFactory.binaryEncoder(encoded, null);
             writer.write(record, out);
             out.flush();
             encoded.close();
         }
-        catch (IOException ex)
+        catch (IOException | AvroRuntimeException ex)
         {
             ex.printStackTrace();
         }
