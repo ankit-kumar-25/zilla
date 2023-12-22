@@ -37,8 +37,6 @@ import io.aklivity.zilla.runtime.validator.json.config.JsonValidatorConfig;
 
 public abstract class JsonValidator
 {
-    protected static final byte MAGIC_BYTE = 0x0;
-
     protected final SchemaConfig catalog;
     protected final CatalogHandler handler;
     protected final String subject;
@@ -98,7 +96,7 @@ public abstract class JsonValidator
     private JsonProvider supplyProvider(
         int schemaId)
     {
-        return providers.computeIfAbsent(schemaId, id -> createProvider(supplySchema(id)));
+        return providers.computeIfAbsent(schemaId, this::createProvider);
     }
 
     private JsonSchema resolveSchema(
@@ -117,8 +115,9 @@ public abstract class JsonValidator
     }
 
     private JsonProvider createProvider(
-        JsonSchema schema)
+        int schemaId)
     {
+        JsonSchema schema = supplySchema(schemaId);
         JsonProvider provider = null;
         if (schema != null)
         {

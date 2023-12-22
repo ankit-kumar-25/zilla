@@ -21,6 +21,7 @@ import org.agrona.DirectBuffer;
 
 import io.aklivity.zilla.runtime.engine.catalog.CatalogHandler;
 import io.aklivity.zilla.runtime.engine.config.CatalogedConfig;
+import io.aklivity.zilla.runtime.engine.config.SchemaConfig;
 import io.aklivity.zilla.runtime.engine.test.internal.validator.config.TestValidatorConfig;
 import io.aklivity.zilla.runtime.engine.validator.FragmentValidator;
 import io.aklivity.zilla.runtime.engine.validator.ValueValidator;
@@ -33,6 +34,7 @@ public class TestValidator implements ValueValidator, FragmentValidator
     private final int schemaId;
     private final boolean read;
     private final CatalogHandler handler;
+    private final SchemaConfig schema;
 
     public TestValidator(
         TestValidatorConfig config,
@@ -43,17 +45,18 @@ public class TestValidator implements ValueValidator, FragmentValidator
         CatalogedConfig cataloged = config.cataloged != null && !config.cataloged.isEmpty()
             ? config.cataloged.get(0)
             : null;
-        schemaId = cataloged != null ? cataloged.schemas.get(0).id : 0;
+        schema = cataloged != null ? cataloged.schemas.get(0) : null;
+        schemaId = schema != null ? schema.id : 0;
         this.handler = cataloged != null ? supplyCatalog.apply(cataloged.id) : null;
     }
 
     @Override
-    public int maxPadding(
+    public int padding(
         DirectBuffer data,
         int index,
         int length)
     {
-        return handler != null ? handler.maxPadding() : 0;
+        return handler.encodePadding();
     }
 
     @Override
@@ -88,15 +91,7 @@ public class TestValidator implements ValueValidator, FragmentValidator
         boolean valid = length == this.length;
         if (valid)
         {
-            int enrichedLength = handler != null ? handler.enrich(schemaId, next) : 0;
-            if (read)
-            {
-                next.accept(data, index + enrichedLength, length - enrichedLength);
-            }
-            else
-            {
-                next.accept(data, index, length);
-            }
+            next.accept(data, index, length);
         }
         return valid ? length : -1;
     }

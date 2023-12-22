@@ -35,14 +35,6 @@
                             {
                                 "type": "string"
                             },
-                            "embed":
-                            {
-                                "type": "boolean"
-                            },
-                            "exclude":
-                            {
-                                "type": "boolean"
-                            },
                             "id":
                             {
                                 "type": "integer"

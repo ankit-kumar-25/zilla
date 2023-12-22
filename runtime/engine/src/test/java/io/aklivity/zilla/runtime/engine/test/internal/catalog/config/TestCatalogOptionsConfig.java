@@ -23,8 +23,6 @@ public class TestCatalogOptionsConfig extends OptionsConfig
 {
     public final String schema;
     public final int id;
-    public final boolean embed;
-    public final boolean exclude;
 
     public static TestCatalogOptionsConfigBuilder<TestCatalogOptionsConfig> builder()
     {
@@ -39,13 +37,9 @@ public class TestCatalogOptionsConfig extends OptionsConfig
 
     public TestCatalogOptionsConfig(
         int id,
-        String schema,
-        boolean embed,
-        boolean exclude)
+        String schema)
     {
         this.schema = schema;
         this.id = id;
-        this.embed = embed;
-        this.exclude = exclude;
     }
 }

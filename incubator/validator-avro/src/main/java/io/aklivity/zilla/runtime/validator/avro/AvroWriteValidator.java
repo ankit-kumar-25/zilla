@@ -23,7 +23,6 @@ import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericDatumReader;
 import org.apache.avro.generic.GenericDatumWriter;
 import org.apache.avro.generic.GenericRecord;
-import org.apache.avro.io.BinaryEncoder;
 
 import io.aklivity.zilla.runtime.engine.catalog.CatalogHandler;
 import io.aklivity.zilla.runtime.engine.validator.FragmentValidator;
@@ -42,12 +41,12 @@ public class AvroWriteValidator extends AvroValidator implements ValueValidator,
     }
 
     @Override
-    public int maxPadding(
+    public int padding(
         DirectBuffer data,
         int index,
         int length)
     {
-        return handler.maxPadding();
+        return handler.encodePadding();
     }
 
     @Override
@@ -85,55 +84,45 @@ public class AvroWriteValidator extends AvroValidator implements ValueValidator,
                 ? catalog.id
                 : handler.resolve(subject, catalog.version);
 
-        GenericDatumReader<GenericRecord> reader = supplyReader(schemaId);
-
-        if (reader != null)
+        if (FORMAT_JSON.equals(format))
         {
-            if (FORMAT_JSON.equals(format))
-            {
-                byte[] record = serializeJsonRecord(schemaId, data, index, length);
-
-                int recordLength = record.length;
-                if (recordLength > 0)
-                {
-                    valLength = recordLength + handler.enrich(schemaId, next);
-                    valueRO.wrap(record);
-                    next.accept(valueRO, 0, recordLength);
-                }
-            }
-            else if (validate(schemaId, data, index, length))
-            {
-                valLength = length + handler.enrich(schemaId, next);
-                next.accept(data, index, length);
-            }
+            valLength = handler.encode(schemaId, data, index, length, next, this::serializeJsonRecord);
+        }
+        else if (validate(schemaId, data, index, length))
+        {
+            valLength = handler.encode(schemaId, data, index, length, next, CatalogHandler.Encoder.IDENTITY);
         }
         return valLength;
     }
 
-    private byte[] serializeJsonRecord(
+    private int serializeJsonRecord(
         int schemaId,
         DirectBuffer buffer,
         int index,
-        int length)
+        int length,
+        ValueConsumer next)
     {
-        encoded.reset();
         try
         {
             Schema schema = supplySchema(schemaId);
             GenericDatumReader<GenericRecord> reader = supplyReader(schemaId);
             GenericDatumWriter<GenericRecord> writer = supplyWriter(schemaId);
-            GenericRecord record = supplyRecord(schemaId);
-            in.wrap(buffer, index, length);
-            record = reader.read(record, decoderFactory.jsonDecoder(schema, in));
-            BinaryEncoder out = encoderFactory.binaryEncoder(encoded, null);
-            writer.write(record, out);
-            out.flush();
-            encoded.close();
+            if (reader != null)
+            {
+                GenericRecord record = supplyRecord(schemaId);
+                in.wrap(buffer, index, length);
+                expandable.wrap(expandable.buffer());
+                record = reader.read(record, decoderFactory.jsonDecoder(schema, in));
+                encoderFactory.binaryEncoder(expandable, encoder);
+                writer.write(record, encoder);
+                encoder.flush();
+                next.accept(expandable.buffer(), 0, expandable.position());
+            }
         }
         catch (IOException | AvroRuntimeException ex)
         {
             ex.printStackTrace();
         }
-        return encoded.toByteArray();
+        return expandable.position();
     }
 }

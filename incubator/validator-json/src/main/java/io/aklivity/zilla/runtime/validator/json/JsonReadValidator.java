@@ -16,10 +16,8 @@ package io.aklivity.zilla.runtime.validator.json;
 
 import static io.aklivity.zilla.runtime.engine.catalog.CatalogHandler.NO_SCHEMA_ID;
 
-import java.nio.ByteOrder;
 import java.util.function.LongFunction;
 
-import org.agrona.BitUtil;
 import org.agrona.DirectBuffer;
 
 import io.aklivity.zilla.runtime.engine.catalog.CatalogHandler;
@@ -67,32 +65,34 @@ public class JsonReadValidator extends JsonValidator implements ValueValidator, 
         int length,
         ValueConsumer next)
     {
+        return handler.decode(data, index, length, next, this::decodePayload);
+    }
+
+    private int decodePayload(
+        int schemaId,
+        DirectBuffer data,
+        int index,
+        int length,
+        ValueConsumer next)
+    {
         int valLength = -1;
 
-        int schemaId;
-        int progress = 0;
-        if (data.getByte(index) == MAGIC_BYTE)
+        if (schemaId == NO_SCHEMA_ID)
         {
-            progress += BitUtil.SIZE_OF_BYTE;
-            schemaId = data.getInt(index + progress, ByteOrder.BIG_ENDIAN);
-            progress += BitUtil.SIZE_OF_INT;
-        }
-        else if (catalog.id != NO_SCHEMA_ID)
-        {
-            schemaId = catalog.id;
-        }
-        else
-        {
-            schemaId = handler.resolve(subject, catalog.version);
+            if (catalog.id != NO_SCHEMA_ID)
+            {
+                schemaId = catalog.id;
+            }
+            else
+            {
+                schemaId = handler.resolve(subject, catalog.version);
+            }
         }
 
-        int payloadLength = length - progress;
-        int payloadIndex = index + progress;
-
-        if (validate(schemaId, data, payloadIndex, payloadLength))
+        if (validate(schemaId, data, index, length))
         {
-            next.accept(data, payloadIndex, payloadLength);
-            valLength = payloadLength;
+            next.accept(data, index, length);
+            valLength = length;
         }
         return valLength;
     }

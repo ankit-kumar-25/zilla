@@ -25,8 +25,6 @@ import io.aklivity.zilla.runtime.engine.config.OptionsConfigAdapterSpi;
 public class TestCatalogOptionsConfigAdapter implements OptionsConfigAdapterSpi
 {
     private static final String SCHEMA = "schema";
-    private static final String EMBED = "embed";
-    private static final String EXCLUDE = "exclude";
     private static final String ID = "id";
 
     @Override
@@ -73,14 +71,6 @@ public class TestCatalogOptionsConfigAdapter implements OptionsConfigAdapterSpi
             config.id(object.containsKey(ID)
                 ? object.getInt(ID)
                 : 0);
-
-            config.embed(object.containsKey(EMBED)
-                ? object.getBoolean(EMBED)
-                : false);
-
-            config.exclude(object.containsKey(EXCLUDE)
-                ? object.getBoolean(EXCLUDE)
-                : false);
         }
         return config.build();
     }

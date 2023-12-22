@@ -35,12 +35,12 @@ public class JsonWriteValidator extends JsonValidator implements ValueValidator,
     }
 
     @Override
-    public int maxPadding(
+    public int padding(
         DirectBuffer data,
         int index,
         int length)
     {
-        return handler.maxPadding();
+        return handler.encodePadding();
     }
 
     @Override
@@ -80,8 +80,7 @@ public class JsonWriteValidator extends JsonValidator implements ValueValidator,
 
         if (validate(schemaId, data, index, length))
         {
-            valLength = length + handler.enrich(schemaId, next);
-            next.accept(data, index, length);
+            valLength = handler.encode(schemaId, data, index, length, next, CatalogHandler.Encoder.IDENTITY);
         }
         return valLength;
     }

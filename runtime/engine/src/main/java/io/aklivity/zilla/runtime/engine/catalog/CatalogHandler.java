@@ -15,13 +15,47 @@
  */
 package io.aklivity.zilla.runtime.engine.catalog;
 
+import org.agrona.DirectBuffer;
+
 import io.aklivity.zilla.runtime.engine.validator.function.ValueConsumer;
 
 public interface CatalogHandler
 {
     int NO_SCHEMA_ID = 0;
-    int NO_ENRICHMENT = 0;
-    int ZERO_PADDING = 0;
+
+    @FunctionalInterface
+    interface Decoder
+    {
+        Decoder IDENTITY = (schemaId, data, index, length, next) ->
+        {
+            next.accept(data, index, length);
+            return length;
+        };
+
+        int accept(
+            int schemaId,
+            DirectBuffer data,
+            int index,
+            int length,
+            ValueConsumer next);
+    }
+
+    @FunctionalInterface
+    interface Encoder
+    {
+        Encoder IDENTITY = (schemaId, data, index, length, next) ->
+        {
+            next.accept(data, index, length);
+            return length;
+        };
+
+        int accept(
+            int schemaId,
+            DirectBuffer data,
+            int index,
+            int length,
+            ValueConsumer next);
+    }
 
     int register(
         String subject,
@@ -35,15 +69,37 @@ public interface CatalogHandler
         String subject,
         String version);
 
-    default int enrich(
-        int schemaId,
-        ValueConsumer next)
+    default int resolve(
+        DirectBuffer data,
+        int index,
+        int length)
     {
-        return NO_ENRICHMENT;
+        return NO_SCHEMA_ID;
     }
 
-    default int maxPadding()
+    default int decode(
+        DirectBuffer data,
+        int index,
+        int length,
+        ValueConsumer next,
+        Decoder decoder)
     {
-        return ZERO_PADDING;
+        return decoder.accept(NO_SCHEMA_ID, data, index, length, next);
+    }
+
+    default int encode(
+        int schemaId,
+        DirectBuffer data,
+        int index,
+        int length,
+        ValueConsumer next,
+        Encoder encoder)
+    {
+        return encoder.accept(schemaId, data, index, length, next);
+    }
+
+    default int encodePadding()
+    {
+        return 0;
     }
 }
