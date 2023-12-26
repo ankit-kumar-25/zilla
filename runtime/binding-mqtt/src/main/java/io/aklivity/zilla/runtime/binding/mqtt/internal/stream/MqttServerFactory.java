@@ -2875,18 +2875,17 @@ public final class MqttServerFactory implements MqttStreamFactory
                         reasonCode = RETAIN_NOT_SUPPORTED;
                         break decode;
                     }
-                    payload.willRetain = (byte) RETAIN_FLAG;
-                }
-
-                if (payload.willQos > maximumQos)
-                {
-                    reasonCode = QOS_NOT_SUPPORTED;
-                    break decode;
                 }
 
                 final int flags = connectFlags;
                 final int willFlags = decodeWillFlags(flags);
                 final int willQos = decodeWillQos(flags);
+
+                if (willQos > maximumQos)
+                {
+                    reasonCode = QOS_NOT_SUPPORTED;
+                    break decode;
+                }
 
                 if (willFlagSet)
                 {
@@ -2933,7 +2932,7 @@ public final class MqttServerFactory implements MqttStreamFactory
 
                 if (reasonCode != BAD_USER_NAME_OR_PASSWORD)
                 {
-                    doEncodeConnack(traceId, authorization, reasonCode, assignedClientId, false, null, version);
+                    doEncodeConnack(traceId, authorization, reasonCode, assignedClientId, false, null, null, version);
                 }
 
                 if (session != null)
@@ -3719,11 +3718,11 @@ public final class MqttServerFactory implements MqttStreamFactory
             {
                 if (connected || reasonCode == SESSION_TAKEN_OVER)
                 {
-                    doEncodeDisconnect(traceId, authorization, reasonCode, null);
+                    doEncodeDisconnect(traceId, authorization, reasonCode, null, null);
                 }
                 else
                 {
-                    doEncodeConnack(traceId, authorization, reasonCode, false, false, null, version);
+                    doEncodeConnack(traceId, authorization, reasonCode, false, false, null, null, version);
                 }
             }
 
@@ -4188,6 +4187,7 @@ public final class MqttServerFactory implements MqttStreamFactory
             boolean assignedClientId,
             boolean sessionPresent,
             String16FW serverReference,
+            String16FW reason,
             int version)
         {
 
@@ -4197,10 +4197,10 @@ public final class MqttServerFactory implements MqttStreamFactory
                 doEncodeConnackV4(traceId, authorization, reasonCode, sessionPresent);
                 break;
             case 5:
-                doEncodeConnackV5(traceId, authorization, reasonCode, assignedClientId, sessionPresent, serverReference);
+                doEncodeConnackV5(traceId, authorization, reasonCode, assignedClientId, sessionPresent, serverReference, reason);
                 break;
             default:
-                doEncodeConnackV5(traceId, authorization, reasonCode, assignedClientId, sessionPresent, serverReference);
+                doEncodeConnackV5(traceId, authorization, reasonCode, assignedClientId, sessionPresent, serverReference, reason);
                 break;
             }
 
@@ -4231,7 +4231,8 @@ public final class MqttServerFactory implements MqttStreamFactory
             int reasonCode,
             boolean assignedClientId,
             boolean sessionPresent,
-            String16FW serverReference)
+            String16FW serverReference,
+            String16FW reason)
         {
             int propertiesSize = 0;
 
@@ -4315,6 +4316,13 @@ public final class MqttServerFactory implements MqttStreamFactory
                         .build();
                     propertiesSize = mqttProperty.limit();
                 }
+            }
+            else if (reason != null && reason.length() != -1)
+            {
+                mqttProperty = mqttPropertyRW.wrap(propertyBuffer, propertiesSize, propertyBuffer.capacity())
+                    .reasonString(reason)
+                    .build();
+                propertiesSize = mqttProperty.limit();
             }
 
             if (serverReference != null)
@@ -4432,12 +4440,20 @@ public final class MqttServerFactory implements MqttStreamFactory
             long traceId,
             long authorization,
             int reasonCode,
-            String16FW serverReference)
+            String16FW serverReference,
+            String16FW reason)
         {
             int propertiesSize = 0;
 
             MqttPropertyFW mqttProperty;
-            if (serverReference != null)
+            if (reason != null && reason.length() != -1)
+            {
+                mqttProperty = mqttPropertyRW.wrap(propertyBuffer, propertiesSize, propertyBuffer.capacity())
+                    .reasonString(reason)
+                    .build();
+                propertiesSize = mqttProperty.limit();
+            }
+            else if (serverReference != null)
             {
                 mqttProperty = mqttPropertyRW.wrap(propertyBuffer, propertiesSize, propertyBuffer.capacity())
                     .serverReference(serverReference)
@@ -4896,12 +4912,11 @@ public final class MqttServerFactory implements MqttStreamFactory
                 final OctetsFW extension = reset.extension();
                 final MqttResetExFW mqttResetEx = extension.get(mqttResetExRO::tryWrap);
 
-
-
                 if (mqttResetEx != null)
                 {
                     String16FW serverRef = mqttResetEx.serverRef();
                     byte reasonCode = (byte) mqttResetEx.reasonCode();
+                    String16FW reason = mqttResetEx.reason();
                     boolean serverRefExists = serverRef != null && serverRef.asString() != null;
 
                     if (reasonCode == SUCCESS)
@@ -4913,13 +4928,14 @@ public final class MqttServerFactory implements MqttStreamFactory
                     {
                         doCancelConnectTimeout();
                         doEncodeConnack(traceId, authorization, reasonCode, assignedClientId,
-                            false, serverRefExists ? serverRef : null, version);
+                            false, serverRefExists ? serverRef : null, reason, version);
                     }
-                    else
+                    else if (version == MQTT_PROTOCOL_VERSION_5)
                     {
-                        doEncodeDisconnect(traceId, authorization, reasonCode, serverRefExists ? serverRef : null);
+                        doEncodeDisconnect(traceId, authorization, reasonCode, serverRefExists ? serverRef : null, reason);
                     }
                 }
+                doNetworkEnd(traceId, authorization);
                 setInitialClosed();
                 decodeNetwork(traceId);
                 cleanupAbort(traceId);
@@ -5010,7 +5026,8 @@ public final class MqttServerFactory implements MqttStreamFactory
                                 sessionPresent = true;
                             }
                         }
-                        doEncodeConnack(traceId, authorization, reasonCode, assignedClientId, sessionPresent, null, version);
+                        doEncodeConnack(traceId, authorization, reasonCode, assignedClientId, sessionPresent,
+                            null, null, version);
                         connected = true;
                     }
                     else
@@ -6289,8 +6306,7 @@ public final class MqttServerFactory implements MqttStreamFactory
         int willQos = 0;
         if (isSetWillQos(flags))
         {
-            //TODO shift by 3?
-            willQos = (flags & WILL_QOS_MASK) >>> 2;
+            willQos = (flags & WILL_QOS_MASK) >>> 3;
         }
         return willQos;
     }
@@ -6408,8 +6424,6 @@ public final class MqttServerFactory implements MqttStreamFactory
     {
         private byte reasonCode = SUCCESS;
         private MqttPropertiesFW willProperties;
-        private byte willQos;
-        private byte willRetain;
         private String16FW willTopic;
         private BinaryFW willPayload;
         private String16FW username;
@@ -6426,8 +6440,6 @@ public final class MqttServerFactory implements MqttStreamFactory
         {
             this.reasonCode = SUCCESS;
             this.willProperties = null;
-            this.willQos = 0;
-            this.willRetain = 0;
             this.willTopic = null;
             this.willPayload = null;
             this.username = null;
@@ -6482,12 +6494,6 @@ public final class MqttServerFactory implements MqttStreamFactory
                         willPayload = mqttWillV5.payload();
                         progress = mqttWillV5.limit();
                         break;
-                    }
-
-                    final byte qos = (byte) ((flags & WILL_QOS_MASK) >>> 3);
-                    if (qos != 0)
-                    {
-                        willQos = (byte) (qos << 1);
                     }
 
                     if (willTopic == null || willTopic.asString().isEmpty())
